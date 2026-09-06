@@ -1,0 +1,358 @@
+// ---------- CONFIGURACIÓN INICIAL ----------
+const MEDICOS = [
+    'Dr. Pérez',
+    'Dra. Gómez',
+    'Dr. Martínez',
+    'Dra. López',
+    'Dr. Fernández',
+    'Dra. Ruiz'
+];
+
+let asignaciones = {}; // { '2026-09-01': 'Dr. Pérez', ... }
+let calendarioData = []; // array de objetos día
+let mesActual = '';
+let yearActual = '';
+
+// ---------- REFERENCIAS DOM ----------
+const $ = id => document.getElementById(id);
+const mesAnioInput = $('mesAnio');
+const btnGenerar = $('btnGenerarCalendario');
+const gridCalendario = $('gridCalendario');
+const calendarioSection = $('calendario');
+const vistaPreviaSection = $('vistaPrevia');
+const tablaEditable = $('tablaEditable');
+const btnGuardar = $('btnGuardarCalendario');
+const btnPDF = $('btnGenerarPDF');
+const btnImprimir = $('btnImprimir');
+
+// ---------- FUNCIONES AUXILIARES ----------
+function parseRangos(texto) {
+    // Convierte "5-10, 20-25" en array de números planos
+    if (!texto.trim()) return [];
+    const partes = texto.split(',').map(s => s.trim());
+    const dias = [];
+    partes.forEach(p => {
+        if (p.includes('-')) {
+            const [ini, fin] = p.split('-').map(Number);
+            for (let d = ini; d <= fin; d++) dias.push(d);
+        } else {
+            dias.push(Number(p));
+        }
+    });
+    return dias;
+}
+
+function obtenerDiasMes(year, month) {
+    // Devuelve array de objetos { dia, diaSemana, esFeriado, esVacaciones, esLicencia }
+    const dias = [];
+    const fecha = new Date(year, month - 1, 1);
+    const ultimoDia = new Date(year, month, 0).getDate();
+    const diasLibres = parseRangos($('diasLibres').value);
+    const vacaciones = parseRangos($('vacaciones').value);
+    const licencias = parseRangos($('licencias').value);
+
+    for (let d = 1; d <= ultimoDia; d++) {
+        const fechaObj = new Date(year, month - 1, d);
+        const nombreDia = fechaObj.toLocaleDateString('es-ES', { weekday: 'long' });
+        dias.push({
+            dia: d,
+            diaSemana: nombreDia.charAt(0).toUpperCase() + nombreDia.slice(1),
+            esFeriado: diasLibres.includes(d),
+            esVacaciones: vacaciones.includes(d),
+            esLicencia: licencias.includes(d)
+        });
+    }
+    return dias;
+}
+
+// ---------- VALIDACIÓN DE RESTRICCIONES ----------
+function puedeAsignar(medico, dia, month, year) {
+    // 1. Límite de 7 guardias por mes
+    const claveMes = `${year}-${String(month).padStart(2,'0')}`;
+    const guardiasMes = Object.keys(asignaciones).filter(fecha => {
+        return fecha.startsWith(claveMes) && asignaciones[fecha] === medico;
+    });
+    if (guardiasMes.length >= 7) return false;
+
+    // 2. Mínimo 4 días de diferencia con guardias anteriores (mismo mes)
+    const diasAsignados = guardiasMes.map(f => parseInt(f.split('-')[2]));
+    for (let d of diasAsignados) {
+        if (Math.abs(d - dia) < 4) return false;
+    }
+    return true;
+}
+
+// ---------- GENERAR CALENDARIO ----------
+function generarCalendario() {
+    const [year, month] = mesAnioInput.value.split('-').map(Number);
+    mesActual = month;
+    yearActual = year;
+    calendarioData = obtenerDiasMes(year, month);
+
+    // Limpiar asignaciones previas de este mes (para no acumular)
+    const claveMes = `${year}-${String(month).padStart(2,'0')}`;
+    Object.keys(asignaciones).forEach(f => {
+        if (f.startsWith(claveMes)) delete asignaciones[f];
+    });
+
+    renderCalendario();
+    calendarioSection.style.display = 'block';
+    vistaPreviaSection.style.display = 'none';
+}
+
+function renderCalendario() {
+    gridCalendario.innerHTML = '';
+    calendarioData.forEach((d, idx) => {
+        const div = document.createElement('div');
+        div.className = 'dia-casilla';
+        if (d.esFeriado) div.classList.add('feriado');
+        if (d.esVacaciones) div.classList.add('vacaciones');
+
+        const num = document.createElement('div');
+        num.className = 'num-dia';
+        num.textContent = d.dia;
+        div.appendChild(num);
+
+        const nom = document.createElement('div');
+        nom.className = 'nom-dia';
+        nom.textContent = d.diaSemana.substring(0, 3);
+        div.appendChild(nom);
+
+        // Select de médicos
+        const select = document.createElement('select');
+        const optionVacio = document.createElement('option');
+        optionVacio.value = '';
+        optionVacio.textContent = '-- Asignar --';
+        select.appendChild(optionVacio);
+
+        // Filtrar médicos según restricciones
+        const medicosDisponibles = MEDICOS.filter(m => {
+            return puedeAsignar(m, d.dia, mesActual, yearActual);
+        });
+
+        medicosDisponibles.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            select.appendChild(opt);
+        });
+
+        // Si ya hay asignación para este día, preseleccionar
+        const fechaKey = `${yearActual}-${String(mesActual).padStart(2,'0')}-${String(d.dia).padStart(2,'0')}`;
+        if (asignaciones[fechaKey]) {
+            select.value = asignaciones[fechaKey];
+        }
+
+        select.addEventListener('change', function(e) {
+            const medico = this.value;
+            const fecha = `${yearActual}-${String(mesActual).padStart(2,'0')}-${String(d.dia).padStart(2,'0')}`;
+            if (medico) {
+                // Verificar restricciones al momento de asignar (por si cambió)
+                if (!puedeAsignar(medico, d.dia, mesActual, yearActual)) {
+                    alert(`No se puede asignar a ${medico}.\nLímite de 7 o menos de 4 días desde su última guardia.`);
+                    this.value = asignaciones[fecha] || '';
+                    return;
+                }
+                asignaciones[fecha] = medico;
+            } else {
+                delete asignaciones[fecha];
+            }
+            // Re-renderizar para actualizar disponibilidad en otros días
+            renderCalendario();
+        });
+
+        div.appendChild(select);
+
+        // Mostrar estado (vacaciones, etc.)
+        const estado = document.createElement('div');
+        estado.className = 'estado';
+        if (d.esFeriado) estado.textContent = '🔴 Feriado';
+        else if (d.esVacaciones) estado.textContent = '🏖️ Vacaciones';
+        else if (d.esLicencia) estado.textContent = '📋 Licencia';
+        div.appendChild(estado);
+
+        gridCalendario.appendChild(div);
+    });
+}
+
+// ---------- GUARDAR ASIGNACIONES Y MOSTRAR VISTA FINAL ----------
+function guardarYMostrarVista() {
+    // Recolectar asignaciones del select (ya se actualizan en tiempo real)
+    // Pero aseguramos que todas las filas estén en el objeto asignaciones
+    const selects = gridCalendario.querySelectorAll('select');
+    selects.forEach((sel, idx) => {
+        const dia = calendarioData[idx].dia;
+        const fecha = `${yearActual}-${String(mesActual).padStart(2,'0')}-${String(dia).padStart(2,'0')}`;
+        if (sel.value) {
+            asignaciones[fecha] = sel.value;
+        } else {
+            delete asignaciones[fecha];
+        }
+    });
+
+    // Construir tabla editable
+    construirTablaEditable();
+    vistaPreviaSection.style.display = 'block';
+    // Opcional: desplazar hacia la vista
+    vistaPreviaSection.scrollIntoView({ behavior: 'smooth' });
+}
+
+function construirTablaEditable() {
+    // Crear tabla con columnas: Mes, Día, Día semana, Residente 1, Residente 2, Especialista, Horario, Observaciones
+    const table = document.createElement('table');
+    const thead = document.createElement('thead');
+    const trHead = document.createElement('tr');
+    const headers = ['Mes', 'Día', 'Día semana', 'Residente 1', 'Residente 2', 'Especialista', 'Horario', 'Observaciones'];
+    headers.forEach(h => {
+        const th = document.createElement('th');
+        th.textContent = h;
+        trHead.appendChild(th);
+    });
+    thead.appendChild(trHead);
+    table.appendChild(thead);
+
+    const tbody = document.createElement('tbody');
+    const mesNombre = new Date(yearActual, mesActual-1).toLocaleString('es-ES', { month: 'long' });
+    const horas = `${$('horaInicio').value} - ${$('horaFin').value}`;
+
+    calendarioData.forEach(d => {
+        const tr = document.createElement('tr');
+        const fechaKey = `${yearActual}-${String(mesActual).padStart(2,'0')}-${String(d.dia).padStart(2,'0')}`;
+        const medico = asignaciones[fechaKey] || '';
+
+        // Celda Mes (se repite, pero podemos ponerlo solo en la primera fila, o siempre)
+        const tdMes = document.createElement('td');
+        tdMes.textContent = mesNombre;
+        tr.appendChild(tdMes);
+
+        const tdDia = document.createElement('td');
+        tdDia.textContent = d.dia;
+        tr.appendChild(tdDia);
+
+        const tdSemana = document.createElement('td');
+        tdSemana.textContent = d.diaSemana;
+        tr.appendChild(tdSemana);
+
+        // Las tres columnas de personal (editable)
+        const roles = ['Residente 1', 'Residente 2', 'Especialista'];
+        // Para simplificar, si el médico asignado es del tipo "Dr." o "Dra." lo pondremos en Especialista,
+        // pero mejor dejamos que el usuario edite manualmente.
+        // Inicializamos todas vacías, pero si hay asignación, la ponemos en la primera columna (Residente 1) a modo de ejemplo.
+        // Pero para dar flexibilidad, dejamos las tres celdas editables.
+        for (let i = 0; i < 3; i++) {
+            const td = document.createElement('td');
+            td.contentEditable = 'true';
+            if (i === 0 && medico) {
+                td.textContent = medico; // sugerencia
+            }
+            tr.appendChild(td);
+        }
+
+        // Horario (editable)
+        const tdHorario = document.createElement('td');
+        tdHorario.contentEditable = 'true';
+        tdHorario.textContent = horas;
+        tr.appendChild(tdHorario);
+
+        // Observaciones (editable)
+        const tdObs = document.createElement('td');
+        tdObs.contentEditable = 'true';
+        if (d.esFeriado) tdObs.textContent = 'Feriado';
+        else if (d.esVacaciones) tdObs.textContent = 'Vacaciones';
+        else if (d.esLicencia) tdObs.textContent = 'Licencia';
+        tr.appendChild(tdObs);
+
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    // Limpiar y agregar
+    tablaEditable.innerHTML = '';
+    tablaEditable.appendChild(table);
+}
+
+// ---------- EXPORTAR A PDF (con pdfmake) ----------
+function generarPDF() {
+    // Capturar la tabla editable (incluyendo cambios manuales)
+    const tabla = tablaEditable.querySelector('table');
+    if (!tabla) return alert('No hay tabla para exportar');
+
+    // Opción 1: Usar html2canvas para convertir la tabla a imagen (más fiel)
+    // Opción 2: Construir la tabla en pdfmake a partir del DOM (más control)
+    // Voy a usar pdfmake directamente para un PDF limpio.
+
+    // Extraer datos de la tabla
+    const rows = tabla.querySelectorAll('tbody tr');
+    const data = [];
+    rows.forEach(tr => {
+        const celdas = tr.querySelectorAll('td');
+        const rowData = [];
+        celdas.forEach(td => rowData.push(td.innerText.trim()));
+        data.push(rowData);
+    });
+
+    // Encabezados
+    const headers = ['Mes', 'Día', 'Día semana', 'Residente 1', 'Residente 2', 'Especialista', 'Horario', 'Observaciones'];
+
+    // Definir documento PDF (tamaño Carta / A4)
+    const docDefinition = {
+        pageSize: 'A4',
+        pageMargins: [40, 60, 40, 60],
+        content: [
+            { text: 'Planificación de Guardias Médicas', style: 'header' },
+            { text: `Mes: ${new Date(yearActual, mesActual-1).toLocaleString('es-ES', { month: 'long', year: 'numeric' })}`, style: 'subheader' },
+            { text: `Horario: ${$('horaInicio').value} - ${$('horaFin').value}`, style: 'subheader' },
+            { text: '\n' },
+            {
+                table: {
+                    headerRows: 1,
+                    widths: ['auto', 'auto', 'auto', '*', '*', '*', 'auto', '*'],
+                    body: [headers, ...data]
+                },
+                layout: {
+                    fillColor: function(rowIndex) {
+                        return (rowIndex % 2 === 0) ? '#f5f9fc' : null;
+                    },
+                    hLineColor: '#b0c8da',
+                    vLineColor: '#b0c8da'
+                }
+            }
+        ],
+        styles: {
+            header: {
+                fontSize: 18,
+                bold: true,
+                alignment: 'center',
+                margin: [0, 0, 0, 8],
+                color: '#0a3144'
+            },
+            subheader: {
+                fontSize: 12,
+                alignment: 'center',
+                margin: [0, 0, 0, 4],
+                color: '#2a5a7a'
+            }
+        },
+        defaultStyle: {
+            fontSize: 10,
+            font: 'Helvetica'
+        }
+    };
+
+    pdfMake.createPdf(docDefinition).download('guardias_mes.pdf');
+}
+
+// ---------- IMPRIMIR ----------
+function imprimirVista() {
+    window.print();
+}
+
+// ---------- EVENTOS ----------
+btnGenerar.addEventListener('click', generarCalendario);
+btnGuardar.addEventListener('click', guardarYMostrarVista);
+btnPDF.addEventListener('click', generarPDF);
+btnImprimir.addEventListener('click', imprimirVista);
+
+// Inicializar con el mes actual
+const hoy = new Date();
+mesAnioInput.value = `${hoy.getFullYear()}-${String(hoy.getMonth()+1).padStart(2,'0')}`;
