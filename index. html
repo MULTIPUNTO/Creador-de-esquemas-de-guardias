@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planificador de Guardias Médicas</title>
+    <!-- Fuentes y estilos -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz@14..32&display=swap" rel="stylesheet">
+    <!-- Librerías para PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.9/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.9/vfs_fonts.js"></script>
+    <!-- Opcional: html2canvas para capturar tabla -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Cabecera -->
+        <header>
+            <h1>🏥 Planificador de Guardias</h1>
+            <p class="subtitulo">Gestión de turnos para especialistas y residentes</p>
+        </header>
+
+        <!-- Panel de configuración -->
+        <section id="configuracion">
+            <div class="card">
+                <h2>⚙️ Configuración del mes</h2>
+                <div class="form-row">
+                    <label>Mes:</label>
+                    <input type="month" id="mesAnio" value="2026-09">
+                </div>
+                <div class="form-row">
+                    <label>Horario de guardia:</label>
+                    <input type="time" id="horaInicio" value="08:00">
+                    <span>a</span>
+                    <input type="time" id="horaFin" value="20:00">
+                </div>
+                <div class="form-row">
+                    <label>Días libres fijos (ej: 1,15):</label>
+                    <input type="text" id="diasLibres" placeholder="1,15,20">
+                </div>
+                <div class="form-row">
+                    <label>Vacaciones (rango):</label>
+                    <input type="text" id="vacaciones" placeholder="5-10, 20-25">
+                </div>
+                <div class="form-row">
+                    <label>Licencias (ej: maternidad, sin sueldo):</label>
+                    <input type="text" id="licencias" placeholder="12,13,14">
+                </div>
+                <button id="btnGenerarCalendario">Generar Calendario</button>
+            </div>
+        </section>
+
+        <!-- Calendario interactivo para asignar guardias -->
+        <section id="calendario" style="display:none;">
+            <div class="card">
+                <h2>📅 Asignación de guardias</h2>
+                <p>Selecciona un día y asigna un médico. Respetará el límite de 7 guardias/mes y descanso mínimo de 4 días.</p>
+                <div id="gridCalendario"></div>
+                <div class="acciones">
+                    <button id="btnGuardarCalendario">Guardar asignaciones</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Vista previa y edición final -->
+        <section id="vistaPrevia" style="display:none;">
+            <div class="card">
+                <h2>📋 Vista final editable</h2>
+                <p>Edita directamente la tabla si necesitas ajustes.</p>
+                <div id="tablaEditable"></div>
+                <div class="acciones">
+                    <button id="btnGenerarPDF">📄 Descargar PDF (Carta/A4)</button>
+                    <button id="btnImprimir">🖨️ Imprimir</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
